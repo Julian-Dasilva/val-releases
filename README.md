@@ -10,16 +10,20 @@ requires an account, a token, or repository access.
 
 ## Trust anchor
 
-Pin this key. It is the one thing you commit and the one thing you verify
-out-of-band. Everything else — version, digests, sizes, URLs — is resolved and then
-checked against it.
-
 ```
 key_id:     5A1B6A28FDC535FF
 public key: RWT/NcX9KGobWpwGVQ92bSiTIEiAOV0kCWm7k9PdnmS+viv8LFT9emQP
 ```
 
-If a download ever presents a different key id, stop. Do not install it.
+Confirm these values through a channel other than this repository before relying on
+them, and stop if a download ever presents a different key id.
+
+**Be aware of what the installer does and does not enforce.** It reads the signing
+key from the release lock and checks that the lock is internally consistent. It has
+no option for you to supply an expected key, so it cannot detect a lock that carries
+a *different but self-consistent* key. Comparing the key above against what a release
+actually ships is currently a manual step, and it is on you. An out-of-band key
+parameter is planned.
 
 ## Supported hosts
 
@@ -30,13 +34,37 @@ If a download ever presents a different key id, stop. Do not install it.
 
 Anything else fails closed. There is no emulation flag.
 
+## Read this before installing
+
+**The installer bundle is not signed.** `val-install-assets-vX.Y.Z.tar.zst` contains
+`install-val.sh` — the program that performs every signature and digest check
+described below — but the signed manifest covers only the two target archives, not
+this bundle. It appears in `SHA256SUMS`, and **that file is unsigned too**.
+
+So the first download is a **trust bootstrap**, not a verified step. If these bytes
+were replaced, you would be running the attacker's verifier, and everything it told
+you afterwards would be worthless.
+
+Before extracting, confirm the bundle's SHA-256 through a channel **other than this
+repository** — ask the maintainer directly. Do not trust a digest published beside
+the artifact it claims to authenticate.
+
+```sh
+shasum -a 256 val-install-assets-vX.Y.Z.tar.zst   # or: sha256sum
+```
+
+Everything after that point *is* cryptographically verified: the installer checks the
+detached minisign signature and every digest before any artifact byte executes. The
+gap is the bootstrap, and it is being closed — the bundle will be bound into the
+signed manifest.
+
 ## Install
 
 You need `bash`, `python3` (3.11+), `tar`, and `zstd`. No `git`, no `gh`, no
 credentials.
 
-Download `val-install-assets-vX.Y.Z.tar.zst` from the release you want, extract it,
-and run the bundled installer against its bundled lock:
+Once you have verified the bundle digest out-of-band, extract it and run the bundled
+installer against its bundled lock:
 
 ```sh
 zstd -d -c val-install-assets-vX.Y.Z.tar.zst | tar -xf -
@@ -54,6 +82,9 @@ On success the binary is at `<bin-home>/val` and the receipt records every verif
 binding. Make sure `<bin-home>` is on your `PATH`.
 
 ## What the installer guarantees
+
+These hold **once you are running an authentic `install-val.sh`** — see the bootstrap
+caveat above. They are properties of the installer, not of your having obtained it.
 
 1. Validates the lock's shape and refuses credentials, private URLs, mirrors, and
    floating `latest`/`stable` aliases.
