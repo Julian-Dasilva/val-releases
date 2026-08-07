@@ -60,11 +60,39 @@ signed manifest.
 
 ## Install
 
-You need `bash`, `python3` (3.11+), `tar`, and `zstd`. No `git`, no `gh`, no
-credentials.
+```sh
+curl -fsSL https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh | bash
+```
 
-Once you have verified the bundle digest out-of-band, extract it and run the bundled
-installer against its bundled lock:
+Pin a version (recommended — see the selection caveat below):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
+  | bash -s -- --version 0.1.4
+```
+
+Needs `bash`, `python3` (3.11+), `tar`, `zstd`, and `curl`. No account, no token,
+no repository access. The binary lands at `~/.local/bin/val` — put that on your
+`PATH`. Override with `--bin-home`, `--data-home`, `--val-home`.
+
+The script only acquires bytes. All verification is done by the release's own
+bundled installer: detached minisign signature over the release manifest, every
+digest and size binding, and a mandatory `val doctor` gate before the selector
+moves.
+
+**Version selection is not authenticated.** Without `--version` the script asks
+GitHub for the newest tag over plain HTTPS, and that answer is not signed. An
+origin able to lie about the tag list could steer you to an older — validly
+signed — release. Pass `--version` to remove that exposure. Signed release
+selection is not implemented yet.
+
+Piping a script from the network into `bash` is itself a trust decision. If you
+would rather not, download `install.sh`, read it, and run it locally — it is
+short and does nothing clever.
+
+### Manual install
+
+Extract the bundle and run its installer directly:
 
 ```sh
 zstd -d -c val-install-assets-vX.Y.Z.tar.zst | tar -xf -
