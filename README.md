@@ -5,8 +5,12 @@ this repository holds release artifacts only.
 
 Every artifact here is signed with a detached minisign (Ed25519) signature over a
 release manifest, and every byte is digest-pinned. The installer verifies the
-signature and every digest **before any artifact byte executes**. Nothing here
-requires an account, a token, or repository access.
+signature and every digest **before any artifact byte executes**.
+
+**This repository is private. You need an access token to install.** Your token is
+issued per engagement and is scoped to this repository only — never to the source.
+When the engagement ends the token stops working, and whatever you already
+installed keeps running. See `ENGAGEMENT-ACCESS.md`.
 
 ## Trust anchor
 
@@ -60,20 +64,29 @@ signed manifest.
 
 ## Install
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh | bash
-```
-
-Pin a version (recommended — see the selection caveat below):
+Export the token you were issued, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
-  | bash -s -- --version 0.1.4
+export VAL_TOKEN=<your-token>
+
+curl -fsSL -H "Authorization: Bearer $VAL_TOKEN" \
+  https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
+  | bash -s -- --version 0.1.5
 ```
 
-Needs `bash`, `python3` (3.11+), `tar`, `zstd`, and `curl`. No account, no token,
-no repository access. The binary lands at `~/.local/bin/val` — put that on your
-`PATH`. Override with `--bin-home`, `--data-home`, `--val-home`.
+The token is needed twice: once to fetch this script, and again by the script to
+download the release assets. It reads `VAL_TOKEN` from the environment, so the
+piped invocation above passes it through automatically; `--token <token>` works too.
+
+Omitting `--version` installs the newest release, but see the selection caveat
+below — pinning is recommended.
+
+Needs `bash`, `python3` (3.11+), `tar`, `zstd`, and `curl`. The binary lands at
+`~/.local/bin/val` — put that on your `PATH`. Override with `--bin-home`,
+`--data-home`, `--val-home`.
+
+If a download fails with a 404, your token is missing, expired, or revoked. A 404
+rather than a 403 is how GitHub reports "no access" on a private repository.
 
 The script only acquires bytes. All verification is done by the release's own
 bundled installer: detached minisign signature over the release manifest, every
