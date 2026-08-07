@@ -17,7 +17,8 @@
 
 set -euo pipefail
 
-REPO="Julian-Dasilva/val-releases"
+REPO="${VAL_REPO:-Julian-Dasilva/val-releases}"
+TOKEN="${VAL_TOKEN:-}"
 VERSION=""
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
@@ -31,6 +32,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --version)   VERSION="${2:-}"; shift 2 ;;
     --version=*) VERSION="${1#*=}"; shift ;;
+    --token)     TOKEN="${2:-}"; shift 2 ;;
+    --token=*)   TOKEN="${1#*=}"; shift ;;
     --bin-home)  BIN_HOME="${2:-}"; shift 2 ;;
     --data-home) DATA_HOME="${2:-}"; shift 2 ;;
     --val-home)  VAL_HOME_DIR="${2:-}"; shift 2 ;;
@@ -56,12 +59,24 @@ case "$(uname -s)/$(uname -m)" in
   *)                   die "unsupported host $(uname -s)/$(uname -m); released targets are macOS arm64 and Linux x86_64" ;;
 esac
 
+# --- auth ---------------------------------------------------------------------
+# A token is required only when the distribution channel is private. Without one
+# the public asset URLs are used, so the same script serves both, and flipping the
+# channel's visibility does not strand an in-flight install.
+API_AUTH=()
+if [ -n "$TOKEN" ]; then
+  API_AUTH=(-H "Authorization: Bearer ${TOKEN}")
+  note "using the supplied access token"
+fi
+
+api() { curl -fsSL "${API_AUTH[@]}" -H "Accept: application/vnd.github+json" "$@"; }
+
 # --- resolve version ---------------------------------------------------------
 if [ -z "$VERSION" ]; then
-  note "no --version given; asking GitHub for the newest release tag (unauthenticated, unsigned answer)"
-  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+  note "no --version given; asking GitHub for the newest release tag (unauthenticated answer, not signed)"
+  VERSION="$(api "https://api.github.com/repos/${REPO}/releases/latest" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')" ||
-    die "could not resolve the newest release; pass --version X.Y.Z"
+    die "could not resolve the newest release; pass --version X.Y.Z (and --token if the channel is private)"
 fi
 VERSION="${VERSION#v}"
 printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' ||
@@ -85,10 +100,37 @@ ASSETS=(
   "val-${TAG}-${TRIPLE}.tar.zst"
   "val-${TAG}-${TRIPLE}.tar.zst.witness.json"
 )
-for f in "${ASSETS[@]}"; do
-  curl -fsSL --proto '=https' --tlsv1.2 -o "$TMP/dl/$f" "${BASE}/${f}" ||
-    die "download failed: $f — check that ${TAG} exists at ${REPO}"
-done
+if [ -n "$TOKEN" ]; then
+  # Private channel: browser download URLs are not token-authenticated, so assets
+  # must be fetched by id through the API with an octet-stream Accept header.
+  note "resolving release assets for ${TAG}"
+  ASSET_MAP="$(api "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for a in d.get("assets", []):
+    print(a["id"], a["name"])' 2>/dev/null)" || ASSET_MAP=""
+  [ -n "$ASSET_MAP" ] ||
+    die "could not list assets for ${TAG} at ${REPO}.
+  If your access token was issued for a finished engagement it may have been
+  revoked or expired. Already-installed versions keep working; only new
+  downloads require a current token."
+  for f in "${ASSETS[@]}"; do
+    id="$(printf '%s\n' "$ASSET_MAP" | awk -v n="$f" '$2 == n {print $1; exit}')"
+    [ -n "$id" ] || die "release ${TAG} has no asset named ${f}"
+    curl -fsSL --proto '=https' --tlsv1.2 "${API_AUTH[@]}" \
+      -H "Accept: application/octet-stream" -o "$TMP/dl/$f" \
+      "https://api.github.com/repos/${REPO}/releases/assets/${id}" ||
+      die "download failed: $f"
+  done
+else
+  for f in "${ASSETS[@]}"; do
+    curl -fsSL --proto '=https' --tlsv1.2 -o "$TMP/dl/$f" "${BASE}/${f}" ||
+      die "download failed: $f — check that ${TAG} exists at ${REPO}, or pass --token if the channel is private"
+  done
+fi
 
 # --- extract the bundle, then delegate to its own installer ------------------
 zstd -d -c "$TMP/dl/val-install-assets-${TAG}.tar.zst" | tar -xf - -C "$TMP" ||
