@@ -7,10 +7,8 @@ Every artifact here is signed with a detached minisign (Ed25519) signature over 
 release manifest, and every byte is digest-pinned. The installer verifies the
 signature and every digest **before any artifact byte executes**.
 
-**This repository is private. You need an access token to install.** Your token is
-issued per engagement and is scoped to this repository only — never to the source.
-When the engagement ends the token stops working, and whatever you already
-installed keeps running. See `ENGAGEMENT-ACCESS.md`.
+This repository is public. Installing needs no account and no token — just the
+tools listed below.
 
 ## Trust anchor
 
@@ -64,19 +62,11 @@ signed manifest.
 
 ## Install
 
-Export the token you were issued, then run:
-
 ```sh
-export VAL_TOKEN=<your-token>
-
-curl -fsSL -H "Authorization: Bearer $VAL_TOKEN" \
+curl -fsSL \
   https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
-  | bash -s -- --version 0.1.5
+  | bash -s -- --version 0.1.6
 ```
-
-The token is needed twice: once to fetch this script, and again by the script to
-download the release assets. It reads `VAL_TOKEN` from the environment, so the
-piped invocation above passes it through automatically; `--token <token>` works too.
 
 Omitting `--version` installs the newest release, but see the selection caveat
 below — pinning is recommended.
@@ -84,9 +74,6 @@ below — pinning is recommended.
 Needs `bash`, `python3` (3.11+), `tar`, `zstd`, and `curl`. The binary lands at
 `~/.local/bin/val` — put that on your `PATH`. Override with `--bin-home`,
 `--data-home`, `--val-home`.
-
-If a download fails with a 404, your token is missing, expired, or revoked. A 404
-rather than a 403 is how GitHub reports "no access" on a private repository.
 
 The script only acquires bytes. All verification is done by the release's own
 bundled installer: detached minisign signature over the release manifest, every
@@ -102,6 +89,24 @@ selection is not implemented yet.
 Piping a script from the network into `bash` is itself a trust decision. If you
 would rather not, download `install.sh`, read it, and run it locally — it is
 short and does nothing clever.
+
+### Staying updated
+
+From v0.1.6, `val update` is the consumer update path. Write `~/.val/update.toml`
+once:
+
+```toml
+schema = "val-update-config.v1"
+default_channel = "public"
+
+[channels.public]
+kind = "github-release"
+repo = "Julian-Dasilva/val-releases"
+```
+
+— then `val update` (or `val update --version vX.Y.Z` to pin). It verifies
+signatures before a single byte executes and never builds from source. Binaries at
+v0.1.5 or older need one manual install of v0.1.6 first.
 
 ### Manual install
 
