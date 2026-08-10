@@ -7,8 +7,10 @@ Every artifact here is signed with a detached minisign (Ed25519) signature over 
 release manifest, and every byte is digest-pinned. The installer verifies the
 signature and every digest **before any artifact byte executes**.
 
-This repository is public. Installing needs no account and no token — just the
-tools listed below.
+**This repository is private. You need an access token to install.** Your token is
+issued per engagement and is scoped to this repository only — never to the source.
+When the engagement ends the token stops working, and whatever you already
+installed keeps running. See `ENGAGEMENT-ACCESS.md`.
 
 ## Trust anchor
 
@@ -20,12 +22,41 @@ public key: RWT/NcX9KGobWpwGVQ92bSiTIEiAOV0kCWm7k9PdnmS+viv8LFT9emQP
 Confirm these values through a channel other than this repository before relying on
 them, and stop if a download ever presents a different key id.
 
-**Be aware of what the installer does and does not enforce.** It reads the signing
-key from the release lock and checks that the lock is internally consistent. It has
-no option for you to supply an expected key, so it cannot detect a lock that carries
-a *different but self-consistent* key. Comparing the key above against what a release
-actually ships is currently a manual step, and it is on you. An out-of-band key
-parameter is planned.
+Initial bootstrap still requires the out-of-band comparison above because it runs
+installer bytes obtained before a trusted `val` exists. After bootstrap,
+`val update` carries this key ID and public key in the running binary and refuses
+an acquired lock that differs before it fetches or trusts any other release byte.
+
+## Update an installed release
+
+`val update [--channel <name>] [--version <vX.Y.Z>] [--json]` is the only
+consumer update path. Do not rebuild from source and do not re-run `install.sh`
+to update an existing release. Initial installation remains the bootstrap below.
+
+Provision `$VAL_HOME/update.toml` through your setup procedure. It is strict
+`val-update-config.v1` input. Channel entries select acquisition only:
+
+| Channel kind | Locator | Credential rule |
+|---|---|---|
+| `github-release` | `repo` | configured env name; passed only to `gh` as `GH_TOKEN` |
+| `gitlab-release` | `project` | configured env name; passed only to `glab` as `GITLAB_TOKEN` or `CI_JOB_TOKEN` |
+
+`allow_ambient` defaults to `false` for both kinds. If the configured credential
+is absent, `val update` returns `CREDENTIAL_UNPROVISIONED`, names that env var,
+and downloads nothing. Do not try other credential names. The parent process is
+stripped of forge tokens before parsing/help, and the installer/candidate child
+receives none.
+
+Channels are byte mirrors. The updater checks the acquired lock against its
+compiled trust anchor, then delegates the exact local bytes to the embedded
+installer. The channel config cannot alter trust. With both credentials present,
+a different valid signed secondary identity is advisory: the default remains
+authoritative and the receipt marks the secondary degraded. A default-channel
+acquisition or integrity failure retries the other configured channel.
+
+JSON terminals use `val-update.v1` and structured `remediation.argv`. Exit codes:
+`0` updated/current, `2` unavailable, `3` refusal, `4` credential provisioning,
+`64` bad argv, `70` internal failure. `val doctor` remains network-free.
 
 ## Supported hosts
 
@@ -62,11 +93,19 @@ signed manifest.
 
 ## Install
 
+Export the token you were issued, then run:
+
 ```sh
-curl -fsSL \
+export VAL_TOKEN=<your-token>
+
+curl -fsSL -H "Authorization: Bearer $VAL_TOKEN" \
   https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
-  | bash -s -- --version 0.1.6
+  | bash -s -- --version 0.1.5
 ```
+
+The token is needed twice: once to fetch this script, and again by the script to
+download the release assets. It reads `VAL_TOKEN` from the environment, so the
+piped invocation above passes it through automatically; `--token <token>` works too.
 
 Omitting `--version` installs the newest release, but see the selection caveat
 below — pinning is recommended.
@@ -74,6 +113,9 @@ below — pinning is recommended.
 Needs `bash`, `python3` (3.11+), `tar`, `zstd`, and `curl`. The binary lands at
 `~/.local/bin/val` — put that on your `PATH`. Override with `--bin-home`,
 `--data-home`, `--val-home`.
+
+If a download fails with a 404, your token is missing, expired, or revoked. A 404
+rather than a 403 is how GitHub reports "no access" on a private repository.
 
 The script only acquires bytes. All verification is done by the release's own
 bundled installer: detached minisign signature over the release manifest, every
@@ -89,24 +131,6 @@ selection is not implemented yet.
 Piping a script from the network into `bash` is itself a trust decision. If you
 would rather not, download `install.sh`, read it, and run it locally — it is
 short and does nothing clever.
-
-### Staying updated
-
-From v0.1.6, `val update` is the consumer update path. Write `~/.val/update.toml`
-once:
-
-```toml
-schema = "val-update-config.v1"
-default_channel = "public"
-
-[channels.public]
-kind = "github-release"
-repo = "Julian-Dasilva/val-releases"
-```
-
-— then `val update` (or `val update --version vX.Y.Z` to pin). It verifies
-signatures before a single byte executes and never builds from source. Binaries at
-v0.1.5 or older need one manual install of v0.1.6 first.
 
 ### Manual install
 
