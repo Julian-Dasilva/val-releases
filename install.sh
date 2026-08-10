@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Bootstrap installer for the `val` runner.
 #
-#   curl -fsSL \
+#   export VAL_TOKEN=<your-token>
+#   curl -fsSL -H "Authorization: Bearer $VAL_TOKEN" \
 #     https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
-#     | bash -s -- --version 0.1.6
+#     | bash -s -- --version 0.1.5
 #
-# The release repository is public: no account or token is needed. For a private
-# channel, VAL_TOKEN from the environment (--token also works) authenticates
-# both this fetch and the asset downloads.
+# The release repository is PRIVATE, so a token is required twice: to fetch this
+# script, and by this script to download assets. It reads VAL_TOKEN from the
+# environment (--token also works). A 404 means missing/expired/revoked access.
 #
 # Downloads the exact signed release assets, then hands them to the release's
 # OWN bundled installer, which performs the real verification: detached minisign
