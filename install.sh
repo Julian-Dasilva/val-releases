@@ -16,6 +16,8 @@
 # mandatory `val doctor` gate before the selector moves. This script does not
 # reimplement any of that — it acquires bytes and delegates.
 #
+# `--version` requires X.Y.Z; an empty value is refused. Omit it to resolve latest.
+#
 # What this script does NOT give you: authenticated release SELECTION. Without
 # --version it asks GitHub for the newest tag over plain HTTPS. That answer is
 # not signed, so an origin able to lie about the tag list can steer you to an
@@ -26,6 +28,7 @@ set -euo pipefail
 REPO="${VAL_REPO:-Julian-Dasilva/val-releases}"
 TOKEN="${VAL_TOKEN:-}"
 VERSION=""
+VERSION_WAS_PROVIDED=false
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 VAL_HOME_DIR="${VAL_HOME:-$HOME/.val}"
@@ -33,23 +36,70 @@ KEEP_TMP=false
 
 die() { printf 'val-install: %s\n' "$1" >&2; exit 1; }
 note() { printf 'val-install: %s\n' "$1" >&2; }
+show_help() {
+  if [ -r "$0" ] \
+    && [ "$(sed -n '1p' "$0" 2>/dev/null)" = '#!/usr/bin/env bash' ] \
+    && [ "$(sed -n '2p' "$0" 2>/dev/null)" = '# Bootstrap installer for the `val` runner.' ]; then
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+  else
+    cat <<'HELP'
+Bootstrap installer for the `val` runner.
+
+  export VAL_TOKEN=<your-token>
+  curl -fsSL -H "Authorization: Bearer $VAL_TOKEN" \
+    https://raw.githubusercontent.com/Julian-Dasilva/val-releases/main/install.sh \
+    | bash -s -- --version 0.1.5
+
+The release repository is PRIVATE, so a token is required twice: to fetch this
+script, and by this script to download assets. It reads VAL_TOKEN from the
+environment (--token also works). A 404 means missing/expired/revoked access.
+
+Downloads the exact signed release assets, then hands them to the release's
+OWN bundled installer, which performs the real verification: detached minisign
+signature over the release manifest, every digest and size binding, and a
+mandatory `val doctor` gate before the selector moves. This script does not
+reimplement any of that — it acquires bytes and delegates.
+
+`--version` requires X.Y.Z; an empty value is refused. Omit it to resolve latest.
+
+What this script does NOT give you: authenticated release SELECTION. Without
+--version it asks GitHub for the newest tag over plain HTTPS. That answer is
+not signed, so an origin able to lie about the tag list can steer you to an
+older (validly signed) release. Pass --version to remove that exposure.
+HELP
+  fi
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version)   VERSION="${2:-}"; shift 2 ;;
-    --version=*) VERSION="${1#*=}"; shift ;;
-    --token)     TOKEN="${2:-}"; shift 2 ;;
+    --version)
+      [ "$#" -ge 2 ] || die "version must be X.Y.Z (got: empty)"
+      VERSION="$2"; VERSION_WAS_PROVIDED=true; shift 2 ;;
+    --version=*) VERSION="${1#*=}"; VERSION_WAS_PROVIDED=true; shift ;;
+    --token)
+      [ "$#" -ge 2 ] || die "token requires a value"
+      TOKEN="$2"; shift 2 ;;
     --token=*)   TOKEN="${1#*=}"; shift ;;
-    --bin-home)  BIN_HOME="${2:-}"; shift 2 ;;
-    --data-home) DATA_HOME="${2:-}"; shift 2 ;;
-    --val-home)  VAL_HOME_DIR="${2:-}"; shift 2 ;;
+    --bin-home)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die "bin-home requires a value"
+      BIN_HOME="$2"; shift 2 ;;
+    --data-home)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die "data-home requires a value"
+      DATA_HOME="$2"; shift 2 ;;
+    --val-home)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die "val-home requires a value"
+      VAL_HOME_DIR="$2"; shift 2 ;;
     --keep-tmp)  KEEP_TMP=true; shift ;;
     -h|--help)
-      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+      show_help
       exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
 done
+
+if [ "$VERSION_WAS_PROVIDED" = true ] && [ -z "$VERSION" ]; then
+  die "version must be X.Y.Z (got: empty)"
+fi
 
 # --- preconditions -----------------------------------------------------------
 for tool in curl tar zstd python3; do
@@ -75,7 +125,7 @@ if [ -n "$TOKEN" ]; then
   note "using the supplied access token"
 fi
 
-api() { curl -fsSL "${API_AUTH[@]}" -H "Accept: application/vnd.github+json" "$@"; }
+api() { curl -fsSL ${API_AUTH[@]+"${API_AUTH[@]}"} -H "Accept: application/vnd.github+json" "$@"; }
 
 # --- resolve version ---------------------------------------------------------
 if [ -z "$VERSION" ]; then
@@ -85,7 +135,7 @@ if [ -z "$VERSION" ]; then
     die "could not resolve the newest release; pass --version X.Y.Z (and --token if the channel is private)"
 fi
 VERSION="${VERSION#v}"
-printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' ||
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   die "version must be X.Y.Z (got: $VERSION)"
 
 TAG="v${VERSION}"
@@ -126,7 +176,7 @@ for a in d.get("assets", []):
   for f in "${ASSETS[@]}"; do
     id="$(printf '%s\n' "$ASSET_MAP" | awk -v n="$f" '$2 == n {print $1; exit}')"
     [ -n "$id" ] || die "release ${TAG} has no asset named ${f}"
-    curl -fsSL --proto '=https' --tlsv1.2 "${API_AUTH[@]}" \
+    curl -fsSL --proto '=https' --tlsv1.2 ${API_AUTH[@]+"${API_AUTH[@]}"} \
       -H "Accept: application/octet-stream" -o "$TMP/dl/$f" \
       "https://api.github.com/repos/${REPO}/releases/assets/${id}" ||
       die "download failed: $f"
