@@ -111,8 +111,9 @@ python3 -c 'import sys,tomllib' 2>/dev/null ||
 case "$(uname -s)/$(uname -m)" in
   Darwin/arm64)        TRIPLE="aarch64-apple-darwin" ;;
   Linux/x86_64)        TRIPLE="x86_64-unknown-linux-gnu" ;;
-  Darwin/x86_64)       die "macOS x86_64 has no published target; only Apple Silicon (arm64) and Linux x86_64 are released" ;;
-  *)                   die "unsupported host $(uname -s)/$(uname -m); released targets are macOS arm64 and Linux x86_64" ;;
+  Linux/aarch64|Linux/arm64) TRIPLE="aarch64-unknown-linux-gnu" ;;
+  Darwin/x86_64)       die "macOS x86_64 has no published target; released targets are Apple Silicon (arm64), Linux x86_64, and Linux arm64" ;;
+  *)                   die "unsupported host $(uname -s)/$(uname -m); released targets are macOS arm64, Linux x86_64, and Linux arm64" ;;
 esac
 
 # --- auth ---------------------------------------------------------------------
@@ -170,9 +171,9 @@ for a in d.get("assets", []):
     print(a["id"], a["name"])' 2>/dev/null)" || ASSET_MAP=""
   [ -n "$ASSET_MAP" ] ||
     die "could not list assets for ${TAG} at ${REPO}.
-  If your access token was issued for a finished engagement it may have been
-  revoked or expired. Already-installed versions keep working; only new
-  downloads require a current token."
+  For the public channel, check that --version names an existing tag and that
+  the release contains the expected asset names. If using the private-channel
+  override (VAL_TOKEN/--token), the token may be stale, revoked, or expired."
   for f in "${ASSETS[@]}"; do
     id="$(printf '%s\n' "$ASSET_MAP" | awk -v n="$f" '$2 == n {print $1; exit}')"
     [ -n "$id" ] || die "release ${TAG} has no asset named ${f}"
