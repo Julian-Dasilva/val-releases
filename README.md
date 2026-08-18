@@ -33,6 +33,11 @@ an acquired lock that differs before it fetches or trusts any other release byte
 consumer update path. Do not rebuild from source and do not re-run `install.sh`
 to update an existing release. Initial installation remains the bootstrap below.
 
+One-time migration exception: a binary from v0.1.7 or earlier embeds the
+pre-arm64 two-target lock schema and will refuse the expanded v0.1.8 lock with
+`LOCK_SHAPE`. Re-run the matching install-assets bootstrap once; subsequent
+updates use `val update` normally.
+
 Provision `$VAL_HOME/update.toml` through your setup procedure. It is strict
 `val-update-config.v1` input. Channel entries select acquisition only:
 
@@ -64,6 +69,7 @@ JSON terminals use `val-update.v1` and structured `remediation.argv`. Exit codes
 |---|---|
 | macOS arm64 | `aarch64-apple-darwin` |
 | Linux x86_64 | `x86_64-unknown-linux-gnu` |
+| Linux arm64 | `aarch64-unknown-linux-gnu` |
 
 Anything else fails closed. There is no emulation flag.
 
@@ -71,7 +77,7 @@ Anything else fails closed. There is no emulation flag.
 
 **The installer bundle is not signed.** `val-install-assets-vX.Y.Z.tar.zst` contains
 `install-val.sh` — the program that performs every signature and digest check
-described below — but the signed manifest covers only the two target archives, not
+described below — but the signed manifest covers only the three target archives, not
 this bundle. It appears in `SHA256SUMS`, and **that file is unsigned too**.
 
 So the first download is a **trust bootstrap**, not a verified step. If these bytes
